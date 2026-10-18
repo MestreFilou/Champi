@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
 import App from './App.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 
 // Hors ligne : seulement en production, pour ne pas servir de vieux fichiers pendant le développement
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
@@ -11,6 +12,8 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

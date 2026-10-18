@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import MapView from './components/MapView.jsx';
 import SearchBox from './components/SearchBox.jsx';
@@ -6,7 +6,10 @@ import Analysis from './components/Analysis.jsx';
 import Observations from './components/Observations.jsx';
 import SpeciesSheets from './components/SpeciesSheets.jsx';
 import SpeciesDetail from './components/SpeciesDetail.jsx';
-import Zones from './components/Zones.jsx';
+import Zones, { MAX_SELECTION } from './components/Zones.jsx';
+import MapLegend from './components/MapLegend.jsx';
+import Forests from './components/Forests.jsx';
+import { forestKey, useForests } from './useForests.js';
 import TrackerPanel from './components/TrackerPanel.jsx';
 import Access from './components/Access.jsx';
 import BeforeYouGo from './components/BeforeYouGo.jsx';
@@ -19,7 +22,7 @@ import Carnet from './components/Carnet.jsx';
 import EntryForm from './components/EntryForm.jsx';
 import { useIsMobile } from './useIsMobile.js';
 import { circleBbox, featureCenter, inBbox, inGeojson } from './geo.js';
-import { zoneLevel } from './format.js';
+import { speciesColor, zoneLevel } from './format.js';
 
 // Emprise des zones favorables : la forêt choisie si on en a une, sinon un disque autour du clic.
 const areaFromPlace = (p) => {
@@ -71,7 +74,9 @@ function summarize(species, features) {
 export default function App() {
   const [tab, setTab] = useState('carte');
   const [species, setSpecies] = useState([]);
-  const [target, setTarget] = useState(savedView.focus ?? 'all'); // 'all' = toutes les espèces, sinon l'espèce isolée
+  // Espèces affichées sur la carte : [] = toutes ; une seule = vue détaillée de cette espèce
+  const [selection, setSelection] = useState(savedView.selection ?? (savedView.focus && savedView.focus !== 'all' ? [savedView.focus] : []));
+  const target = selection.length === 1 ? selection[0] : 'all'; // espèce dont on montre la fiche, les prévisions, les observations
   const [point, setPoint] = useState(savedView.point ?? null);
   const [radius, setRadius] = useState(savedView.radius ?? 1);
   const [place, setPlace] = useState(savedView.place ?? null);
@@ -90,6 +95,9 @@ export default function App() {
   const [guide, setGuide] = useState(null); // cible de la boussole : un coin du carnet
   const [entryFor, setEntryFor] = useState(null); // coin dont on remplit la fiche de récolte
   const mobile = useIsMobile();
+  const forests = useForests();
+  const [canGoBack, setCanGoBack] = useState(false);
+  const nav = useRef({ stack: [], index: -1 });
   const [panel, setPanel] = useState('peek'); // cran du panneau du bas sur téléphone
 
   useEffect(() => {
@@ -98,11 +106,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(VIEW_KEY, JSON.stringify({ place, point, radius, focus: target }));
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ place, point, radius, selection }));
     } catch {
       /* contour de forêt trop lourd ou stockage bloqué : on s'en passe */
     }
-  }, [place, point, radius, target]);
+  }, [place, point, radius, selection]);
 
   useEffect(() => {
     if (!point) return;
@@ -156,6 +164,7 @@ export default function App() {
       .zones({ s, w, n, e })
       .then((fc) => {
         // Les peuplements sont pris dans l'emprise rectangulaire : on ne garde que ceux de la forêt elle-même.
+        if (!Array.isArray(fc?.features) || !Array.isArray(fc?.species)) throw new Error('Réponse des zones dans un format inattendu : recharge la page.');
         if (!outline) return !stale && setZones({ data: fc });
         const features = fc.features.filter((f) => inGeojson(outline, ...featureCenter(f)));
         if (!stale) setZones({ data: { ...fc, features, species: summarize(fc.species, features) } });
@@ -173,6 +182,67 @@ export default function App() {
     setPoint({ lat, lon });
   };
 
+  // Historique : chaque changement d'onglet, de secteur, de rayon ou d'espèces devient une étape.
+  // La flèche ← et le bouton retour du téléphone reviennent à l'étape précédente.
+  useEffect(() => {
+    const h = nav.current;
+    const snap = { tab, place, point, radius, selection, zoneArea };
+    const cur = h.stack[h.index];
+    // Rien de nouveau (ou on vient de revenir en arrière vers cette étape)
+    if (cur && ['tab', 'place', 'point', 'radius', 'selection'].every((k) => cur[k] === snap[k])) return;
+    h.stack = [...h.stack.slice(0, h.index + 1), snap];
+    h.index = h.stack.length - 1;
+    if (h.index === 0) window.history.replaceState({ champi: 0 }, '');
+    else window.history.pushState({ champi: h.index }, '');
+    setCanGoBack(h.index > 0);
+  }, [tab, place, point, radius, selection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onPop = (e) => {
+      const h = nav.current;
+      const i = e.state?.champi;
+      const v = h.stack[i];
+      if (!v) return;
+      h.index = i;
+      setTab(v.tab);
+      setPlace(v.place);
+      setPoint(v.point);
+      setRadius(v.radius);
+      setSelection(v.selection);
+      setZoneArea(v.zoneArea);
+      setCanGoBack(i > 0);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const toggleSpecies = (id) =>
+    setSelection((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : sel.length >= MAX_SELECTION ? sel : [...sel, id]));
+
+  const openForest = (f) => {
+    setPlace(f.place ?? null);
+    setPoint(f.point);
+    setRadius(f.radius ?? 1);
+    setZoneArea(f.zoneArea ?? (f.place ? areaFromPlace(f.place) : { ...circleBbox(f.point.lat, f.point.lon, 1.5), label: null }));
+    setSelection(f.selection ?? []);
+    setTab('carte');
+    setPanel('peek');
+  };
+
+  const currentKey = forestKey({ place, point });
+  const isSaved = forests.forests.some((f) => f.key === currentKey);
+  const toggleSaved = () =>
+    isSaved
+      ? forests.remove(currentKey)
+      : forests.save({ place, point, radius, zoneArea, selection }, place?.name ?? `Secteur ${point.lat.toFixed(3)}, ${point.lon.toFixed(3)}`);
+
+  // Vue de départ de la carte quand elle (ré)apparaît : la forêt ou le point en cours
+  const initialView = place?.bbox
+    ? { center: [(place.bbox[0] + place.bbox[1]) / 2, (place.bbox[2] + place.bbox[3]) / 2], zoom: 12 }
+    : point
+      ? { center: [point.lat, point.lon], zoom: 14 }
+      : undefined;
+
   // En sortie, la carte passe devant : on replie le panneau.
   useEffect(() => {
     if (tracker.sortie.status === 'recording') setPanel('peek');
@@ -180,11 +250,13 @@ export default function App() {
 
   const bySpeciesId = useMemo(() => Object.fromEntries(species.map((s) => [s.id, s])), [species]);
   const speciesNames = useMemo(() => Object.fromEntries(species.map((s) => [s.id, s.name])), [species]);
-  // Espèce isolée : seulement les peuplements où elle a une chance
+  // Espèces choisies : seulement les peuplements où l'une d'elles a une chance
   const shownZones = useMemo(() => {
-    if (!zones.data || target === 'all') return zones.data;
-    return { ...zones.data, features: zones.data.features.filter((f) => zoneLevel(f.properties.scores[target] ?? 0)) };
-  }, [zones.data, target]);
+    if (!zones.data || !Array.isArray(zones.data.features)) return null;
+    if (!selection.length) return zones.data;
+    const keep = (f) => selection.some((id) => zoneLevel(f.properties.scores?.[id] ?? 0));
+    return { ...zones.data, features: zones.data.features.filter(keep) };
+  }, [zones.data, selection]);
 
   const guideTo = (spot) => {
     setGuide({ lat: spot.lat, lon: spot.lon, label: spot.name });
@@ -207,6 +279,7 @@ export default function App() {
 
   const searchBox = (
     <SearchBox
+      current={place}
       onSelect={(p) => {
         setPlace(p);
         setZoneArea(areaFromPlace(p) ?? { ...circleBbox(p.lat, p.lon, Math.max(radius, 1.5)), label: null });
@@ -217,24 +290,41 @@ export default function App() {
   );
 
   const controls = (
-    <div className="controls">
-      <label>
-        Espèces
-        <select id="focus" value={target} onChange={(e) => setTarget(e.target.value)}>
-          <option value="all">Toutes les espèces</option>
-          {selectable.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Rayon d’analyse
-        <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
-          {[0.5, 1, 2, 3].map((r) => (
-            <option key={r} value={r}>{r} km</option>
-          ))}
-        </select>
-      </label>
+    <div className="controls-block">
+      <div className="picker" role="group" aria-label="Espèces affichées sur la carte">
+        <button className={selection.length === 0 ? 'chip on' : 'chip'} onClick={() => setSelection([])}>Toutes</button>
+        {selectable.map((s) => {
+          const on = selection.includes(s.id);
+          return (
+            <button
+              key={s.id}
+              className={on ? 'chip on' : 'chip'}
+              style={on ? { borderColor: speciesColor(s.id), background: `${speciesColor(s.id)}26` } : undefined}
+              onClick={() => toggleSpecies(s.id)}
+              disabled={!on && selection.length >= MAX_SELECTION}
+              aria-pressed={on}
+            >
+              <i style={{ background: speciesColor(s.id) }} />
+              {s.name.replace(/ \(.*\)/, '')}
+            </button>
+          );
+        })}
+      </div>
+      <div className="controls-row">
+        <label>
+          Rayon d’analyse
+          <select id="radius" value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
+            {[0.5, 1, 2, 3].map((r) => (
+              <option key={r} value={r}>{r} km</option>
+            ))}
+          </select>
+        </label>
+        {point && (
+          <button className={isSaved ? 'ghost on' : 'ghost'} onClick={toggleSaved}>
+            {isSaved ? '★ Dans Mes forêts' : '☆ Enregistrer dans Mes forêts'}
+          </button>
+        )}
+      </div>
     </div>
   );
 
@@ -251,19 +341,20 @@ export default function App() {
           state={analysis}
           target={target}
           speciesById={bySpeciesId}
-          onPickSpecies={setTarget}
+          onPickSpecies={(id) => setSelection([id])}
           onOpenSheet={(id) => setSheet(bySpeciesId[id])}
         >
           <Zones
             state={zones}
-            focus={target}
-            onFocus={setTarget}
+            selection={selection}
+            onToggle={toggleSpecies}
+            onClear={() => setSelection([])}
             speciesById={bySpeciesId}
             area={zoneArea}
             results={analysis.data?.results}
             days={analysis.data?.weather.days}
             show={showZones}
-            onToggle={setShowZones}
+            onShow={setShowZones}
           />
         </Analysis>
       )}
@@ -288,15 +379,17 @@ export default function App() {
   const map = (
     <section className="map-wrap">
       <MapView
+        initialView={initialView}
         point={point}
         radius={radius}
         place={place}
         observations={observations?.items}
         parkings={parkings?.items}
         zones={showZones ? shownZones : null}
-        zonesKey={`${target}:${zoneArea?.s},${zoneArea?.w}:${shownZones?.features.length}`}
-        zoneFocus={target}
+        zonesKey={`${selection.join(',')}:${zoneArea?.s},${zoneArea?.w}:${shownZones?.features.length}`}
+        selection={selection}
         speciesNames={speciesNames}
+        speciesBest={Object.fromEntries((zones.data?.species ?? []).map((s) => [s.id, s.best]))}
         tracker={tracker}
         spots={carnet.spots}
         follow={follow}
@@ -305,6 +398,7 @@ export default function App() {
         onSpotAction={onSpotAction}
         onReady={setLeaflet}
       />
+      <MapLegend selection={selection} speciesById={bySpeciesId} visible={showZones && !!shownZones?.features.length} />
       <TrackerPanel
         tracker={tracker}
         spots={carnet.spots}
@@ -324,6 +418,9 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
+        {canGoBack && (
+          <button className="back" onClick={() => window.history.back()} aria-label="Revenir en arrière" title="Revenir en arrière">←</button>
+        )}
         <div className="brand">
           <span className="logo">🍄</span>
           <div>
@@ -333,6 +430,7 @@ export default function App() {
         </div>
         <nav className="tabs">
           <button className={tab === 'carte' ? 'active' : ''} onClick={() => setTab('carte')}>Carte</button>
+          <button className={tab === 'forets' ? 'active' : ''} onClick={() => setTab('forets')}>Forêts</button>
           <button className={tab === 'carnet' ? 'active' : ''} onClick={() => setTab('carnet')}>Carnet</button>
           <button className={tab === 'fiches' ? 'active' : ''} onClick={() => setTab('fiches')}>Fiches</button>
         </nav>
@@ -357,7 +455,7 @@ export default function App() {
           <BottomSheet
             snap={panel}
             onSnap={setPanel}
-            grip={<MobileSummary point={point} state={analysis} target={target} species={bySpeciesId[target]} zones={zones.data} speciesById={bySpeciesId} />}
+            grip={<MobileSummary point={point} state={analysis} target={target} selection={selection} species={bySpeciesId[target]} zones={zones.data} speciesById={bySpeciesId} />}
           >
             {controls}
             {details}
@@ -366,6 +464,8 @@ export default function App() {
       )}
 
       {tab === 'fiches' && <SpeciesSheets species={species} onOpen={setSheet} />}
+
+      {tab === 'forets' && <Forests forests={forests} speciesById={bySpeciesId} onOpen={openForest} />}
 
       {tab === 'carnet' && (
         <Carnet carnet={carnet} speciesById={bySpeciesId} onShowOnMap={showSpot} onGuide={guideTo} onAddEntry={setEntryFor} />
@@ -389,7 +489,7 @@ export default function App() {
           onSearch={
             sheet.selectable
               ? () => {
-                  setTarget(sheet.id);
+                  setSelection([sheet.id]);
                   setSheet(null);
                   setTab('carte');
                 }

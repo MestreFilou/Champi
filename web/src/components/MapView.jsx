@@ -44,32 +44,50 @@ function Follow({ position, follow, onFollow }) {
   return null;
 }
 
-// Toutes les espèces : couleur de l'espèce la plus probable, plus soutenue quand sa note est haute.
-// Espèce isolée : vert foncé, vert clair ou orange selon la note de cette espèce.
-const zoneStyle = (focus) => (f) => {
-  const p = f.properties;
-  if (focus === 'all') {
-    const c = speciesColor(p.top);
-    return { color: c, weight: 0.5, fillColor: c, fillOpacity: 0.12 + (0.5 * p.scores[p.top]) / 100 };
+// Bord blanc fin sur toutes les parcelles : deux parcelles voisines restent distinctes
+const EDGE = { color: '#ffffff', weight: 0.8, opacity: 0.9 };
+
+/**
+ * Couleur des parcelles selon les espèces choisies :
+ * - aucune (toutes) : une seule teinte, plus foncée là où la meilleure note est haute ;
+ * - une : vert foncé, vert clair ou orange selon sa note ;
+ * - plusieurs : la couleur de l'espèce pour qui la parcelle est la plus remarquable, c'est-à-dire la plus
+ *   proche de sa meilleure note dans la forêt (deux espèces aux mêmes arbres hôtes auraient sinon une seule
+ *   couleur partout) ; gris quand elles sont à égalité.
+ */
+export const TIE_COLOR = '#6b7280';
+const zoneStyle = (selection, bests) => (f) => {
+  const sc = f.properties.scores;
+  if (selection.length === 0) {
+    const best = Math.max(...Object.values(sc));
+    return { ...EDGE, fillColor: '#166534', fillOpacity: 0.06 + (0.64 * best) / 100 };
   }
-  const s = ZONE_STYLE[zoneLevel(p.scores[focus] ?? 0)];
-  return { color: s.color, weight: 0.6, fillColor: s.color, fillOpacity: s.fillOpacity };
+  if (selection.length === 1) {
+    const s = ZONE_STYLE[zoneLevel(sc[selection[0]] ?? 0)];
+    return { ...EDGE, fillColor: s.color, fillOpacity: s.fillOpacity };
+  }
+  const rel = selection
+    .map((id) => ({ id, r: (sc[id] ?? 0) / Math.max(1, bests[id] ?? 100), score: sc[id] ?? 0 }))
+    .sort((a, b) => b.r - a.r);
+  const tie = rel[1] && rel[0].r - rel[1].r < 0.05;
+  return { ...EDGE, fillColor: tie ? TIE_COLOR : speciesColor(rel[0].id), fillOpacity: 0.25 + (0.5 * rel[0].score) / 100 };
 };
 
 // Au survol ou au toucher : les notes de la parcelle, de la plus haute à la plus basse
-const zoneTooltip = (focus, names) => (f, layer) => {
+const zoneTooltip = (selection, names) => (f, layer) => {
   const p = f.properties;
   const ranked = Object.entries(p.scores).sort((a, b) => b[1] - a[1]);
-  const rows = (focus === 'all' ? ranked.slice(0, 5) : ranked.filter(([id]) => id === focus))
+  const rows = (selection.length ? ranked.filter(([id]) => selection.includes(id)) : ranked.slice(0, 5))
     .map(([id, sc]) => `<span style="color:${speciesColor(id)}">●</span> ${names[id] ?? id} <b>${sc} %</b>`)
     .join('<br>');
   const relief = p.slope != null ? ` · ${p.slope >= 3 ? `pente ${Math.round(p.slope)}°, versant ${p.aspect}` : 'plat'}` : '';
-  layer.bindTooltip(`${rows}<br><small>${p.essence} · ${p.area} ha${relief}</small>`, { sticky: true });
+  layer.bindTooltip(`${rows || 'Aucune des espèces choisies'}<br><small>${p.essence} · ${p.area} ha${relief}</small>`, { sticky: true });
 };
 
-export default function MapView({ point, radius, place, observations = [], parkings = [], zones, zonesKey, zoneFocus = 'all', speciesNames = {}, tracker, spots = [], follow, onFollow, onPick, onSpotAction, onReady }) {
+export default function MapView({ initialView = { center: [46.6, 2.4], zoom: 6 }, point, radius, place, observations = [], parkings = [], zones, zonesKey, selection = [], speciesNames = {}, speciesBest = {}, tracker, spots = [], follow, onFollow, onPick, onSpotAction, onReady }) {
+  // preferCanvas : bien plus léger que le SVG pour dessiner un millier de parcelles sur un téléphone
   return (
-    <MapContainer center={[46.6, 2.4]} zoom={6} className="map" zoomControl>
+    <MapContainer center={initialView.center} zoom={initialView.zoom} className="map" zoomControl preferCanvas>
       <LayersControl position="topright">
         <LayersControl.BaseLayer checked name="Plan IGN">
           <TileLayer url={PLAN_IGN} attribution={IGN_ATTR} maxZoom={19} crossOrigin />
@@ -103,7 +121,7 @@ export default function MapView({ point, radius, place, observations = [], parki
       <FlyTo place={place} point={point} />
       <Follow position={tracker?.position} follow={follow} onFollow={onFollow} />
 
-      {zones && <GeoJSON key={zonesKey} data={zones} style={zoneStyle(zoneFocus)} onEachFeature={zoneTooltip(zoneFocus, speciesNames)} />}
+      {zones && <GeoJSON key={zonesKey} data={zones} style={zoneStyle(selection, speciesBest)} onEachFeature={zoneTooltip(selection, speciesNames)} />}
 
       {place?.geojson && (
         <GeoJSON key={place.id} data={place.geojson} style={{ color: '#7a4b1e', weight: 2, fillOpacity: 0.05, dashArray: '6 4' }} />

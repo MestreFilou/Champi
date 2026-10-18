@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 
-export default function SearchBox({ onSelect }) {
+export default function SearchBox({ onSelect, current }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -9,6 +9,13 @@ export default function SearchBox({ onSelect }) {
   const [error, setError] = useState(null);
   const timer = useRef();
   const picked = useRef(null);
+
+  // La forêt affichée (rouverte depuis Mes forêts, retour arrière…) se lit dans la barre
+  useEffect(() => {
+    const name = current?.name ?? '';
+    picked.current = name;
+    setQ(name);
+  }, [current]);
 
   // Debounce : Nominatim limite à 1 requête/s.
   useEffect(() => {

@@ -92,11 +92,21 @@ Quand on choisit une forêt, [server/lib/zones.js](server/lib/zones.js) récupè
 et donne à chacun une note par espèce, sur 100 : la note météo du jour de l'espèce (la même sur tout le massif)
 × l'adéquation du peuplement (arbres hôtes, ajustés par le versant et par le sol).
 
-- **Toutes les espèces** (par défaut) : chaque parcelle prend la couleur de son espèce la plus probable ;
+- **Toutes les espèces** (par défaut) : une seule teinte, plus foncée là où la meilleure note est haute ;
   la liste donne, pour chaque espèce, la note atteinte sur au moins 10 ha de la forêt (une seule petite
   clairière ne suffit pas), la part de la forêt qui lui convient et son meilleur jour à venir.
-- **Une espèce isolée** (toucher une espèce, ou le menu « Espèces ») : la carte ne montre qu'elle, en trois
-  niveaux (60 et plus, 35 à 59, 10 à 34).
+- **Une espèce** : ses trois niveaux (60 et plus, 35 à 59, 10 à 34), sa fiche et ses prévisions.
+- **Plusieurs espèces** (5 au plus) : chaque parcelle prend la couleur de l'espèce pour qui c'est l'un de ses
+  meilleurs coins (note rapportée à sa meilleure note dans la forêt), gris quand elles sont à égalité.
+
+Les espèces se choisissent avec les pastilles sous la recherche ou en cochant la liste.
+
+### Mes forêts et retour arrière
+
+« ☆ Enregistrer dans Mes forêts » garde le secteur en cours (forêt, point, rayon, espèces) ; l'onglet
+**Forêts** les liste avec ce qui pousse aujourd'hui et les rouvre d'un geste. Chaque changement d'onglet,
+de secteur, de rayon ou d'espèces est une étape d'historique : la flèche ← et le bouton retour du téléphone
+y reviennent.
 
 Le relief ajuste les notes : pente et exposition au centre de chaque peuplement ([server/lib/relief.js](server/lib/relief.js)).
 Par temps chaud ou sec, les versants nord gagnent jusqu'à 30 % d'adéquation ; par temps froid, les versants sud.

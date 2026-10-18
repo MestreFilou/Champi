@@ -3,9 +3,10 @@
 // - API : réseau d'abord, mais si le réseau traîne (forêt, une barre), on sert la dernière réponse connue ;
 // - tuiles de carte : cache d'abord (elles ne changent pas), enregistrées à la consultation ou à l'avance.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `champi-shell-${VERSION}`;
-const API = 'champi-api';
+// Versionné avec l'appli : une réponse d'API d'une ancienne version (autre format) ne doit jamais ressortir
+const API = `champi-api-${VERSION}`;
 const TILES = 'champi-tiles';
 
 self.addEventListener('install', (event) => {
@@ -16,7 +17,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      for (const key of await caches.keys()) if (key.startsWith('champi-shell-') && key !== SHELL) await caches.delete(key);
+      for (const key of await caches.keys())
+        if ((key.startsWith('champi-shell-') && key !== SHELL) || (key.startsWith('champi-api') && key !== API)) await caches.delete(key);
       await self.clients.claim();
     })(),
   );
