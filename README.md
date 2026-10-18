@@ -28,6 +28,11 @@ Ou depuis GitHub : pousser le dépôt puis l'importer sur vercel.com, sans rien 
 Vercel fournit le HTTPS, donc le GPS marche directement sur le téléphone : ouvrir l'adresse puis
 « Ajouter à l'écran d'accueil ».
 
+**Mot de passe** : dans Vercel, *Settings → Environment Variables*, ajouter `APP_PASSWORD` puis redéployer.
+[middleware.js](middleware.js) protège alors tout le site (pages et API) derrière [login.html](web/public/login.html) ;
+la connexion reste mémorisée un an par appareil, et changer le mot de passe déconnecte tout le monde.
+Sans cette variable, l'appli reste ouverte. En local (`npm run dev`), pas de mot de passe.
+
 Le cache mémoire ne vit que le temps d'une instance de fonction : après une période sans visite, les
 premières requêtes repassent par l'IGN et Open-Meteo et sont un peu plus lentes.
 
@@ -53,6 +58,9 @@ Aucune clé d'API n'est nécessaire.
 | Fonds de carte | Plan IGN, photos aériennes IGN, OpenStreetMap |
 | Météo | Open-Meteo : 45 jours d'historique + 14 jours de prévision, humidité du sol |
 | Zones favorables | IGN BD Forêt V2 (WFS) : peuplements filtrés selon les arbres hôtes de l'espèce |
+| Pente et exposition | IGN, service d'altimétrie (RGE ALTI) |
+| Type de sol | BRGM, carte lithologique simplifiée au 1/1 000 000 |
+| Parkings | OpenStreetMap via Overpass (lent : chargé à part) |
 | Observations et commentaires | iNaturalist (API publique) |
 | Photos des fiches | iNaturalist (licences Creative Commons, attribution affichée) |
 
@@ -85,10 +93,33 @@ BD Forêt et ne garde que ceux dont l'essence convient à l'espèce, en trois ni
 (`hosts` de l'espèce). La météo étant la même à l'échelle d'un massif, ce sont les arbres qui font la
 différence d'un secteur à l'autre. Emprise limitée à ~44 km de côté.
 
+Le relief ajuste ces zones : pente et exposition au centre de chaque peuplement ([server/lib/relief.js](server/lib/relief.js)).
+Par temps chaud ou sec, les versants nord gagnent jusqu'à 30 % d'affinité ; par temps froid, les versants sud.
+
+### Sol
+
+Le type de roche sous le point (calcaire, acide, neutre) est comparé au sol préféré de l'espèce (`soil` dans
+[species.js](server/data/species.js)) : 0,55 en cas de désaccord, 0,8 sur sol neutre. L'échelle de la carte
+(1/1 000 000) en fait une indication régionale, d'où une pénalité plutôt qu'une exclusion.
+
+### Carnet
+
+Coins marqués en sortie, avec leurs récoltes (espèce, quantité, note, photo réduite à 1280 px), un tableau
+« mes saisons » par espèce et par mois, et une sauvegarde JSON (photos comprises) pour changer de téléphone.
+Données sur l'appareil : localStorage pour les coins, IndexedDB pour les photos.
+
+### Hors ligne
+
+Un service worker ([web/public/sw.js](web/public/sw.js), actif en production seulement) garde l'appli, les
+réponses de l'API (servies depuis le cache si le réseau met plus de 6 s) et les tuiles de carte. « Enregistrer
+la zone affichée » télécharge le Plan IGN du secteur jusqu'au zoom le plus fin qui tient en 2500 tuiles :
+plus on zoome avant d'enregistrer, plus la carte hors ligne est détaillée. La dernière vue est mémorisée,
+pour qu'un rechargement sans réseau retrouve le même secteur.
+
 ### Suivi GPS
 
-Trace de la sortie, distance et cap pour revenir au point de départ, coins marqués, export GPX
-(trace + coins en waypoints). Voir [web/src/useTracker.js](web/src/useTracker.js).
+Trace de la sortie, boussole vers le point de départ ou vers un coin du carnet (flèche orientée avec la
+boussole du téléphone, nord en haut sinon), coins marqués, export GPX (trace + coins en waypoints). Voir [web/src/useTracker.js](web/src/useTracker.js).
 
 ⚠️ Les fiches aident à reconnaître mais ne remplacent jamais la vérification par un pharmacien ou une
 association mycologique.

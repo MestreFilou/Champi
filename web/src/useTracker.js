@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { distance } from './geo.js';
 
-// Suivi GPS d'une sortie : position en direct, trace enregistrée, coins marqués.
-// La trace et les coins sont gardés dans le navigateur (localStorage) : un rechargement ne perd rien.
+// Suivi GPS d'une sortie : position en direct et trace enregistrée (les coins vivent dans le carnet).
+// La trace est gardée dans le navigateur (localStorage) : un rechargement ne perd rien.
 
 const TRACK_KEY = 'champi.sortie';
-const SPOTS_KEY = 'champi.coins';
 const MAX_ACCURACY = 40; // m : au-delà, le point s'affiche mais n'entre pas dans la trace
 
 const load = (key, fallback) => {
@@ -31,7 +30,6 @@ export function useTracker() {
     const s = load(TRACK_KEY, EMPTY);
     return s.status === 'recording' ? { ...s, status: 'paused' } : s;
   });
-  const [spots, setSpots] = useState(() => load(SPOTS_KEY, []));
   const [position, setPosition] = useState(null);
   const [error, setError] = useState(null);
   const watchId = useRef(null);
@@ -39,7 +37,6 @@ export function useTracker() {
   const recording = useRef(false);
 
   useEffect(() => save(TRACK_KEY, sortie), [sortie]);
-  useEffect(() => save(SPOTS_KEY, spots), [spots]);
 
   const onPosition = useCallback((p) => {
     const pt = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), alt: p.coords.altitude, t: p.timestamp };
@@ -119,13 +116,6 @@ export function useTracker() {
     setSortie(EMPTY);
   }, []);
 
-  const addSpot = useCallback(() => {
-    if (!position) return;
-    setSpots((list) => [...list, { id: Date.now(), lat: position.lat, lon: position.lon, t: Date.now(), name: `Coin ${list.length + 1}` }]);
-  }, [position]);
-
-  const removeSpot = useCallback((id) => setSpots((list) => list.filter((s) => s.id !== id)), []);
-
   // L'écran verrouillé libère le wake lock : on le reprend au retour sur l'appli.
   useEffect(() => {
     const onVisible = () => document.visibilityState === 'visible' && recording.current && keepAwake();
@@ -136,5 +126,5 @@ export function useTracker() {
     };
   }, [keepAwake, unwatch]);
 
-  return { sortie, spots, position, error, locate, start, pause, stop, reset, addSpot, removeSpot };
+  return { sortie, position, error, locate, start, pause, stop, reset };
 }

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { bearing, compass, distance, formatDistance, formatDuration, toGpx, trackLength } from '../geo.js';
+import { formatDistance, formatDuration, toGpx, trackLength } from '../geo.js';
+import Compass from './Compass.jsx';
 
 // Panneau flottant sur la carte : démarrer une sortie, suivre sa trace, retrouver le point de départ.
-export default function TrackerPanel({ tracker, follow, onFollow, onAnalyzeHere }) {
-  const { sortie, spots, position, error } = tracker;
+export default function TrackerPanel({ tracker, spots, guide, onClearGuide, onMarkSpot, follow, onFollow, onAnalyzeHere }) {
+  const { sortie, position, error } = tracker;
   const [, tick] = useState(0);
   const active = sortie.status === 'recording' || sortie.status === 'paused';
 
@@ -14,8 +15,9 @@ export default function TrackerPanel({ tracker, follow, onFollow, onAnalyzeHere 
     return () => clearInterval(id);
   }, [sortie.status]);
 
+  // Cible de la boussole : le coin choisi, sinon le point de départ de la sortie (la voiture)
   const start = sortie.track[0];
-  const back = position && start ? { d: distance(position, start), dir: compass(bearing(position, start)) } : null;
+  const target = guide ?? (start && sortie.status !== 'done' ? { ...start, label: 'Retour au départ' } : null);
   const elapsed = sortie.startedAt ? Math.max(0, (sortie.endedAt ?? Date.now()) - sortie.startedAt) : 0;
 
   const exportGpx = () => {
@@ -45,18 +47,16 @@ export default function TrackerPanel({ tracker, follow, onFollow, onAnalyzeHere 
             <span><b>{formatDistance(trackLength(sortie.track))}</b> parcourus</span>
             {position && <span><b>±{position.acc} m</b> précision</span>}
           </div>
-          {back && sortie.status !== 'done' && (
-            <p className="tracker-back">
-              Retour au départ : <b>{formatDistance(back.d)}</b> vers le <b>{back.dir}</b>
-            </p>
-          )}
           {sortie.status === 'paused' && <p className="tracker-note">En pause : la trace ne s’enregistre pas.</p>}
         </>
       )}
 
+      <Compass position={position} target={target} onClear={guide ? onClearGuide : null} />
+      {guide && !position && <p className="tracker-note">Localisation en cours pour te guider vers {guide.label}…</p>}
+
       {active && (
         <div className="tracker-row">
-          <button className="primary" onClick={tracker.addSpot} disabled={!position}>📍 Marquer un coin</button>
+          <button className="primary" onClick={() => onMarkSpot(position)} disabled={!position}>📍 Marquer un coin</button>
           <button className={follow ? 'ghost on' : 'ghost'} onClick={() => onFollow(!follow)}>◎ Suivre</button>
           {sortie.status === 'recording'
             ? <button className="ghost" onClick={tracker.pause}>⏸ Pause</button>

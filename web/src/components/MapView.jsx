@@ -3,9 +3,16 @@ import { MapContainer, TileLayer, WMSTileLayer, LayersControl, Circle, CircleMar
 import { ZONE_STYLE } from './Zones.jsx';
 import { gmapsUrl, wazeUrl } from './Access.jsx';
 
-const IGN_WMTS = (layer, format = 'image/png') =>
-  `https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=normal&TILEMATRIXSET=PM&FORMAT=${format}&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
+import { IGN_WMTS, PLAN_IGN } from '../tiles.js';
+
 const IGN_ATTR = '&copy; <a href="https://www.ign.fr/">IGN</a> Géoplateforme';
+
+// Donne la carte Leaflet à l'appli (emprise affichée pour le hors ligne)
+function MapRef({ onReady }) {
+  const map = useMap();
+  useEffect(() => onReady?.(map), [map, onReady]);
+  return null;
+}
 
 function ClickHandler({ onPick }) {
   useMapEvents({ click: (e) => onPick(e.latlng.lat, e.latlng.lng) });
@@ -46,18 +53,18 @@ const zoneTooltip = (f, layer) => {
   layer.bindTooltip(`${p.essence} · ${ZONE_STYLE[p.level].label}<br><small>${p.tfv}</small>${relief}`, { sticky: true });
 };
 
-export default function MapView({ point, radius, place, observations = [], parkings = [], zones, zonesKey, tracker, follow, onFollow, onPick, onRemoveSpot }) {
+export default function MapView({ point, radius, place, observations = [], parkings = [], zones, zonesKey, tracker, spots = [], follow, onFollow, onPick, onSpotAction, onReady }) {
   return (
     <MapContainer center={[46.6, 2.4]} zoom={6} className="map" zoomControl>
       <LayersControl position="topright">
         <LayersControl.BaseLayer checked name="Plan IGN">
-          <TileLayer url={IGN_WMTS('GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2')} attribution={IGN_ATTR} maxZoom={19} />
+          <TileLayer url={PLAN_IGN} attribution={IGN_ATTR} maxZoom={19} crossOrigin />
         </LayersControl.BaseLayer>
         <LayersControl.BaseLayer name="Photos aériennes">
-          <TileLayer url={IGN_WMTS('ORTHOIMAGERY.ORTHOPHOTOS', 'image/jpeg')} attribution={IGN_ATTR} maxZoom={19} />
+          <TileLayer url={IGN_WMTS('ORTHOIMAGERY.ORTHOPHOTOS', 'image/jpeg')} attribution={IGN_ATTR} maxZoom={19} crossOrigin />
         </LayersControl.BaseLayer>
         <LayersControl.BaseLayer name="OpenStreetMap">
-          <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" maxZoom={19} />
+          <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" maxZoom={19} crossOrigin />
         </LayersControl.BaseLayer>
         <LayersControl.Overlay name="Essences (BD Forêt V2)">
           <WMSTileLayer
@@ -78,6 +85,7 @@ export default function MapView({ point, radius, place, observations = [], parki
       </LayersControl>
 
       <ClickHandler onPick={onPick} />
+      <MapRef onReady={onReady} />
       <FlyTo place={place} point={point} />
       <Follow position={tracker?.position} follow={follow} onFollow={onFollow} />
 
@@ -127,14 +135,17 @@ export default function MapView({ point, radius, place, observations = [], parki
           <Popup>Point de départ</Popup>
         </CircleMarker>
       )}
-      {tracker?.spots.map((s) => (
+      {spots.map((s) => (
         <CircleMarker key={s.id} center={[s.lat, s.lon]} radius={8} bubblingMouseEvents={false} pathOptions={{ color: '#fff', weight: 2, fillColor: '#c2410c', fillOpacity: 1 }}>
           <Popup>
             <strong>{s.name}</strong>
             <br />
-            {new Date(s.t).toLocaleDateString('fr-FR')}
-            <br />
-            <button className="link" onClick={() => onRemoveSpot(s.id)}>Supprimer</button>
+            {s.entries.length ? `${s.entries.length} récolte${s.entries.length > 1 ? 's' : ''}` : 'aucune récolte notée'} · {new Date(s.t).toLocaleDateString('fr-FR')}
+            <div className="popup-actions">
+              <button className="link" onClick={() => onSpotAction('entry', s)}>+ Récolte</button>
+              <button className="link" onClick={() => onSpotAction('guide', s)}>🧭 Y aller</button>
+              <button className="link" onClick={() => onSpotAction('carnet', s)}>Carnet</button>
+            </div>
           </Popup>
         </CircleMarker>
       ))}

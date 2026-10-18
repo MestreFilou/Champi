@@ -12,6 +12,7 @@ import { getStands, zonesForSpecies } from './lib/zones.js';
 import { reliefPreference } from './lib/relief.js';
 import { getSoil } from './lib/geology.js';
 import { getParkings } from './lib/parkings.js';
+import { authToken, COOKIE, ONE_YEAR, safeEqual } from './auth.js';
 
 const app = express();
 app.use(compression()); // les zones d'une grande forêt font ~2 Mo de JSON, ~400 Ko compressées
@@ -36,6 +37,19 @@ const route = (fn) => async (req, res) => {
     res.status(err.status || 502).json({ error: err.message });
   }
 };
+
+// Connexion : vérifie le mot de passe et pose le cookie lu par middleware.js (un an)
+app.post('/api/login', express.urlencoded({ extended: false }), async (req, res) => {
+  const password = process.env.APP_PASSWORD;
+  if (!password) return res.redirect(303, '/');
+  if (!safeEqual(req.body?.password ?? '', password)) {
+    await new Promise((r) => setTimeout(r, 800)); // freine les essais en rafale
+    return res.redirect(303, '/login.html?erreur=1');
+  }
+  const secure = process.env.VERCEL ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${COOKIE}=${authToken(password)}; Max-Age=${ONE_YEAR}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  res.redirect(303, '/');
+});
 
 app.get('/api/species', route(async () => {
   const taxa = await Promise.all(ALL_SHEETS.map((s) => getTaxon(s.latin).catch(() => null)));
