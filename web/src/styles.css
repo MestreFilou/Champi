@@ -324,3 +324,21 @@ button { font: inherit; cursor: pointer; }
 .saved-zones { list-style: none; padding: 0; margin: 0.6rem 0 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
 .saved-zones small { display: block; }
 .card .primary { margin-top: 0.2rem; }
+
+/* ----- toutes les espèces ----- */
+.zones-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.3rem 0.8rem; margin-bottom: 0.4rem; }
+.zones-head h3 { margin: 0; }
+.forest-species { list-style: none; padding: 0; margin: 0.3rem 0 0.6rem; }
+.forest-species button {
+  display: grid; grid-template-columns: 12px minmax(0, 1fr) 70px 42px; align-items: center; gap: 0.5rem;
+  width: 100%; padding: 0.4rem 0.2rem; background: none; border: 0; border-radius: 6px; text-align: left; font-size: 0.88rem;
+}
+.forest-species button:hover { background: var(--bg); }
+.forest-species i, .m-top i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.fs-name { min-width: 0; }
+.fs-name small { display: block; color: var(--muted); font-size: 0.74rem; }
+.forest-species .rank-score { font-weight: 700; }
+.m-top { display: flex; flex-direction: column; gap: 0.2rem; padding-bottom: 0.2rem; }
+.m-top ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.9rem; }
+.m-top li { display: flex; align-items: center; gap: 0.45rem; }
+.m-top b { margin-left: auto; font-variant-numeric: tabular-nums; }

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { MapContainer, TileLayer, WMSTileLayer, LayersControl, Circle, CircleMarker, GeoJSON, Polyline, Popup, useMap, useMapEvents } from 'react-leaflet';
 import { ZONE_STYLE } from './Zones.jsx';
+import { speciesColor, zoneLevel } from '../format.js';
 import { gmapsUrl, wazeUrl } from './Access.jsx';
 
 import { IGN_WMTS, PLAN_IGN } from '../tiles.js';
@@ -43,17 +44,30 @@ function Follow({ position, follow, onFollow }) {
   return null;
 }
 
-const zoneStyle = (f) => {
-  const s = ZONE_STYLE[f.properties.level];
+// Toutes les espèces : couleur de l'espèce la plus probable, plus soutenue quand sa note est haute.
+// Espèce isolée : vert foncé, vert clair ou orange selon la note de cette espèce.
+const zoneStyle = (focus) => (f) => {
+  const p = f.properties;
+  if (focus === 'all') {
+    const c = speciesColor(p.top);
+    return { color: c, weight: 0.5, fillColor: c, fillOpacity: 0.12 + (0.5 * p.scores[p.top]) / 100 };
+  }
+  const s = ZONE_STYLE[zoneLevel(p.scores[focus] ?? 0)];
   return { color: s.color, weight: 0.6, fillColor: s.color, fillOpacity: s.fillOpacity };
 };
-const zoneTooltip = (f, layer) => {
+
+// Au survol ou au toucher : les notes de la parcelle, de la plus haute à la plus basse
+const zoneTooltip = (focus, names) => (f, layer) => {
   const p = f.properties;
-  const relief = p.slope != null ? `<br><small>${p.slope >= 3 ? `pente ${Math.round(p.slope)}°, versant ${p.aspect}` : 'terrain plat'} · ${p.elevation} m${p.relief ? ` · ${p.relief}` : ''}</small>` : '';
-  layer.bindTooltip(`${p.essence} · ${ZONE_STYLE[p.level].label}<br><small>${p.tfv}</small>${relief}`, { sticky: true });
+  const ranked = Object.entries(p.scores).sort((a, b) => b[1] - a[1]);
+  const rows = (focus === 'all' ? ranked.slice(0, 5) : ranked.filter(([id]) => id === focus))
+    .map(([id, sc]) => `<span style="color:${speciesColor(id)}">●</span> ${names[id] ?? id} <b>${sc} %</b>`)
+    .join('<br>');
+  const relief = p.slope != null ? ` · ${p.slope >= 3 ? `pente ${Math.round(p.slope)}°, versant ${p.aspect}` : 'plat'}` : '';
+  layer.bindTooltip(`${rows}<br><small>${p.essence} · ${p.area} ha${relief}</small>`, { sticky: true });
 };
 
-export default function MapView({ point, radius, place, observations = [], parkings = [], zones, zonesKey, tracker, spots = [], follow, onFollow, onPick, onSpotAction, onReady }) {
+export default function MapView({ point, radius, place, observations = [], parkings = [], zones, zonesKey, zoneFocus = 'all', speciesNames = {}, tracker, spots = [], follow, onFollow, onPick, onSpotAction, onReady }) {
   return (
     <MapContainer center={[46.6, 2.4]} zoom={6} className="map" zoomControl>
       <LayersControl position="topright">
@@ -89,7 +103,7 @@ export default function MapView({ point, radius, place, observations = [], parki
       <FlyTo place={place} point={point} />
       <Follow position={tracker?.position} follow={follow} onFollow={onFollow} />
 
-      {zones && <GeoJSON key={zonesKey} data={zones} style={zoneStyle} onEachFeature={zoneTooltip} />}
+      {zones && <GeoJSON key={zonesKey} data={zones} style={zoneStyle(zoneFocus)} onEachFeature={zoneTooltip(zoneFocus, speciesNames)} />}
 
       {place?.geojson && (
         <GeoJSON key={place.id} data={place.geojson} style={{ color: '#7a4b1e', weight: 2, fillOpacity: 0.05, dashArray: '6 4' }} />

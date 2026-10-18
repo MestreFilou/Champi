@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreDay, trapezoid, habitatScore, forecastConfidence } from './lib/score.js';
-import { zonesForSpecies } from './lib/zones.js';
+import { bestOver, scoreZones, standFit } from './lib/zones.js';
 import { reliefBonus, slopeFrom } from './lib/relief.js';
 import { soilKind } from './lib/geology.js';
 import { soilFactor } from './lib/score.js';
@@ -53,23 +53,22 @@ test('fiabilité : le score de J+5 du cèpe repose surtout sur de la pluie déj�
   assert.equal(forecastConfidence(cepe, 58, 45).level, 'faible');
 });
 
-test('zones : seules les essences hôtes sortent, classées par niveau', () => {
-  const sq = [[[2, 48], [2.01, 48], [2.01, 48.01], [2, 48.01], [2, 48]]];
-  const z = zonesForSpecies(cepe, {
-    truncated: false,
-    stands: [
-      { essence: 'Hêtre', tfv: 'x', coordinates: [sq] },
-      { essence: 'Feuillus', tfv: 'x', coordinates: [sq] },
-      { essence: 'Peuplier', tfv: 'x', coordinates: [sq] },
-    ],
-  });
-  assert.deepEqual(z.features.map((f) => f.properties.level), ['fort', 'moyen']);
+const sq = [[[2, 48], [2.01, 48], [2.01, 48.01], [2, 48.01], [2, 48]]];
+const stand = (essence, extra = {}) => ({ essence, tfv: 'x', coordinates: [sq], area: 10, ...extra });
+const ctxFor = (list) => list.map(([id, weatherScore, extra]) => ({ species: speciesById(id), weatherScore, prefer: null, soilValue: 1, ...extra }));
+
+test('zones : chaque peuplement a la note de chaque espèce, et l’espèce dominante', () => {
+  const z = scoreZones({ truncated: false, stands: [stand('Hêtre'), stand('Pin sylvestre'), stand('Peuplier')] }, ctxFor([['cepe-bordeaux', 60], ['cepe-pins', 50]]));
+  assert.equal(z.features.length, 2); // le peuplier n'accueille aucune des deux espèces
+  assert.equal(z.features[0].properties.scores['cepe-bordeaux'], 60);
+  assert.equal(z.features[0].properties.top, 'cepe-bordeaux'); // le cèpe des pins y a une note plus basse
+  assert.equal(z.features[1].properties.top, 'cepe-pins');
+  assert.equal(z.species[0].id, 'cepe-bordeaux');
+  assert.equal(z.species[0].best, 60);
 });
 
-test('zones : au-delà du plafond, on garde les plus favorables', () => {
-  const sq = [[[2, 48], [2.01, 48], [2.01, 48.01], [2, 48.01], [2, 48]]];
-  const stands = ['Feuillus', 'Hêtre', 'Feuillus'].map((essence) => ({ essence, tfv: 'x', coordinates: [sq] }));
-  const z = zonesForSpecies(cepe, { stands, truncated: false }, { max: 1 });
+test('zones : au-delà du plafond, on garde les mieux notés', () => {
+  const z = scoreZones({ truncated: false, stands: [stand('Feuillus'), stand('Hêtre'), stand('Feuillus')] }, ctxFor([['cepe-bordeaux', 80]]), { max: 1 });
   assert.equal(z.truncated, true);
   assert.equal(z.features[0].properties.essence, 'Hêtre');
 });
@@ -84,13 +83,13 @@ test('relief : exposition calculée depuis trois altitudes', () => {
   assert.equal(reliefBonus('nord', { slope: 1, aspect: 0 }), 0); // plat : pas d'effet
 });
 
-test('zones : un bon versant fait monter le niveau', () => {
-  const sq = [[[2, 48], [2.01, 48], [2.01, 48.01], [2, 48.01], [2, 48]]];
-  const stands = [{ essence: 'Feuillus', tfv: 'x', coordinates: [sq], relief: { slope: 15, aspect: 0, elevation: 200 } }];
-  assert.equal(zonesForSpecies(cepe, { stands, truncated: false }).features[0].properties.level, 'moyen');
-  assert.equal(zonesForSpecies(cepe, { stands, truncated: false }, { prefer: 'nord' }).features[0].properties.level, 'moyen');
-  const z = zonesForSpecies(cepe, { stands, truncated: false }, { prefer: 'sud' });
-  assert.equal(z.features[0].properties.level, 'faible');
+test('zones : un bon versant fait monter la note, un mauvais la baisse', () => {
+  const st = stand('Feuillus', { relief: { slope: 15, aspect: 0, elevation: 200 } }); // versant nord
+  const cepe = speciesById('cepe-bordeaux');
+  assert.equal(standFit(cepe, st, null), 0.6);
+  assert.ok(standFit(cepe, st, 'nord') > 0.75);
+  assert.ok(standFit(cepe, st, 'sud') < 0.45);
+  assert.equal(standFit(cepe, st, null, 0.55), 0.6 * 0.55); // sol défavorable
 });
 
 test('sol : calcaire, acide et pénalité de la girolle sur calcaire', () => {
@@ -101,4 +100,10 @@ test('sol : calcaire, acide et pénalité de la girolle sur calcaire', () => {
   assert.equal(soilFactor(speciesById('girolle'), { kind: 'calcaire' }).value, 0.55);
   assert.equal(soilFactor(speciesById('girolle'), { kind: 'acide' }).value, 1);
   assert.equal(soilFactor(cepe, { kind: 'calcaire' }).value, 1); // le cèpe est indifférent
+});
+
+test('zones : une petite clairière ne suffit pas à placer une espèce en tête', () => {
+  assert.equal(bestOver([[60, 2], [40, 30]], 10), 40); // 2 ha à 60, puis 30 ha à 40
+  assert.equal(bestOver([[60, 12], [40, 30]], 10), 60);
+  assert.equal(bestOver([[60, 2]], 10), 0); // pas assez de surface
 });

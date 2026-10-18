@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { SPECIES, ALL_SHEETS, speciesById } from './data/species.js';
 import { getWeather } from './lib/weather.js';
 import { getForestComposition } from './lib/forest.js';
-import { analyzeSpecies, scoreDay } from './lib/score.js';
+import { analyzeSpecies, scoreDay, soilFactor } from './lib/score.js';
 import { getObservations, getTaxon } from './lib/observations.js';
 import { searchPlaces } from './lib/search.js';
-import { getStands, zonesForSpecies } from './lib/zones.js';
+import { getStands, scoreZones } from './lib/zones.js';
 import { reliefPreference } from './lib/relief.js';
 import { getSoil } from './lib/geology.js';
 import { getParkings } from './lib/parkings.js';
@@ -91,20 +91,24 @@ app.get('/api/analyze', route(async (req) => {
   };
 }));
 
-// Peuplements favorables à une espèce dans une emprise (forêt sélectionnée ou disque d'analyse).
+// Note de chaque espèce dans chaque peuplement d'une emprise (forêt sélectionnée ou disque d'analyse).
 app.get('/api/zones', route(async (req) => {
-  const species = speciesById(String(req.query.species));
-  if (!species) throw Object.assign(new Error('Espèce inconnue'), { status: 404 });
   const bbox = ['s', 'w', 'n', 'e'].map((k) => Number(req.query[k]));
   coords({ query: { lat: bbox[0], lon: bbox[1] } });
   coords({ query: { lat: bbox[2], lon: bbox[3] } });
-  // Le versant à privilégier dépend de la météo du moment au centre de la zone
-  const [stands, weather] = await Promise.all([
+  const [lat, lon] = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
+  const [stands, weather, soil] = await Promise.all([
     getStands(bbox),
-    getWeather((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2).catch(() => null),
+    getWeather(lat, lon),
+    getSoil(lat, lon).catch(() => null),
   ]);
-  const relief = weather ? reliefPreference(species, scoreDay(species, weather, weather.todayIndex, 1).factors) : { prefer: null, reason: null };
-  return { ...zonesForSpecies(species, stands, { prefer: relief.prefer }), relief };
+  // La météo et le sol sont ceux du centre de la zone : seuls les arbres et le relief varient d'un peuplement à l'autre
+  const ctx = SPECIES.map((species) => {
+    const { score, factors } = scoreDay(species, weather, weather.todayIndex, 1);
+    const relief = reliefPreference(species, factors);
+    return { species, weatherScore: score, prefer: relief.prefer, reason: relief.reason, soilValue: soilFactor(species, soil).value };
+  });
+  return { ...scoreZones(stands, ctx), soil, date: weather.days[weather.todayIndex].date };
 }));
 
 app.get('/api/parkings', route(async (req) => {

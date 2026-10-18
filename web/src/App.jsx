@@ -19,6 +19,7 @@ import Carnet from './components/Carnet.jsx';
 import EntryForm from './components/EntryForm.jsx';
 import { useIsMobile } from './useIsMobile.js';
 import { circleBbox, featureCenter, inBbox, inGeojson } from './geo.js';
+import { zoneLevel } from './format.js';
 
 // Emprise des zones favorables : la forêt choisie si on en a une, sinon un disque autour du clic.
 const areaFromPlace = (p) => {
@@ -43,10 +44,34 @@ const initialArea = () => {
   return null;
 };
 
+// Résumé par espèce recalculé sur les seuls peuplements de la forêt (le serveur travaille sur son rectangle),
+// avec les mêmes règles que server/lib/zones.js : note atteinte sur au moins 10 ha, et un peuplement
+// « convient » quand sa note atteint 60 % de la note météo de l'espèce.
+function summarize(species, features) {
+  const total = features.reduce((sum, f) => sum + f.properties.area, 0) || 1;
+  const minHa = Math.min(10, total);
+  return species
+    .map((s) => {
+      const scored = [];
+      let favorable = 0;
+      for (const f of features) {
+        const sc = f.properties.scores[s.id] ?? 0;
+        if (!sc) continue;
+        scored.push([sc, f.properties.area]);
+        if (s.weatherScore > 0 && sc >= 0.6 * s.weatherScore) favorable += f.properties.area;
+      }
+      scored.sort((a, b) => b[0] - a[0]);
+      let area = 0;
+      const best = scored.find(([, ha]) => (area += ha) >= minHa)?.[0] ?? 0;
+      return { ...s, best, favorableShare: Math.round((100 * favorable) / total) / 100 };
+    })
+    .sort((a, b) => b.best - a.best);
+}
+
 export default function App() {
   const [tab, setTab] = useState('carte');
   const [species, setSpecies] = useState([]);
-  const [target, setTarget] = useState(savedView.target ?? 'cepe-bordeaux');
+  const [target, setTarget] = useState(savedView.focus ?? 'all'); // 'all' = toutes les espèces, sinon l'espèce isolée
   const [point, setPoint] = useState(savedView.point ?? null);
   const [radius, setRadius] = useState(savedView.radius ?? 1);
   const [place, setPlace] = useState(savedView.place ?? null);
@@ -73,7 +98,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(VIEW_KEY, JSON.stringify({ place, point, radius, target }));
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ place, point, radius, focus: target }));
     } catch {
       /* contour de forêt trop lourd ou stockage bloqué : on s'en passe */
     }
@@ -93,7 +118,10 @@ export default function App() {
   }, [point, radius]);
 
   useEffect(() => {
-    if (!point || !target) return;
+    if (!point || target === 'all') {
+      setObservations(null);
+      return;
+    }
     let stale = false;
     setObservations({ loading: true });
     api
@@ -120,22 +148,23 @@ export default function App() {
   }, [point]);
 
   useEffect(() => {
-    if (!zoneArea || !target || !showZones) return;
+    if (!zoneArea || !showZones) return;
     let stale = false;
     setZones((z) => ({ ...z, loading: true, error: null }));
     const { s, w, n, e, outline } = zoneArea;
     api
-      .zones(target, { s, w, n, e })
+      .zones({ s, w, n, e })
       .then((fc) => {
         // Les peuplements sont pris dans l'emprise rectangulaire : on ne garde que ceux de la forêt elle-même.
-        const features = outline ? fc.features.filter((f) => inGeojson(outline, ...featureCenter(f))) : fc.features;
-        if (!stale) setZones({ data: { ...fc, features } });
+        if (!outline) return !stale && setZones({ data: fc });
+        const features = fc.features.filter((f) => inGeojson(outline, ...featureCenter(f)));
+        if (!stale) setZones({ data: { ...fc, features, species: summarize(fc.species, features) } });
       })
       .catch((err) => !stale && setZones({ error: err.message }));
     return () => {
       stale = true;
     };
-  }, [zoneArea, target, showZones]);
+  }, [zoneArea, showZones]);
 
   const pickPoint = (lat, lon) => {
     // Un clic dans la forêt choisie garde la forêt (contour et zones) ; ailleurs, on repart sur ce point.
@@ -150,6 +179,12 @@ export default function App() {
   }, [tracker.sortie.status]);
 
   const bySpeciesId = useMemo(() => Object.fromEntries(species.map((s) => [s.id, s])), [species]);
+  const speciesNames = useMemo(() => Object.fromEntries(species.map((s) => [s.id, s.name])), [species]);
+  // Espèce isolée : seulement les peuplements où elle a une chance
+  const shownZones = useMemo(() => {
+    if (!zones.data || target === 'all') return zones.data;
+    return { ...zones.data, features: zones.data.features.filter((f) => zoneLevel(f.properties.scores[target] ?? 0)) };
+  }, [zones.data, target]);
 
   const guideTo = (spot) => {
     setGuide({ lat: spot.lat, lon: spot.lon, label: spot.name });
@@ -184,8 +219,9 @@ export default function App() {
   const controls = (
     <div className="controls">
       <label>
-        Je cherche
-        <select value={target} onChange={(e) => setTarget(e.target.value)}>
+        Espèces
+        <select id="focus" value={target} onChange={(e) => setTarget(e.target.value)}>
+          <option value="all">Toutes les espèces</option>
           {selectable.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
@@ -218,11 +254,21 @@ export default function App() {
           onPickSpecies={setTarget}
           onOpenSheet={(id) => setSheet(bySpeciesId[id])}
         >
-          <Zones state={zones} show={showZones} onToggle={setShowZones} species={bySpeciesId[target]} area={zoneArea} />
+          <Zones
+            state={zones}
+            focus={target}
+            onFocus={setTarget}
+            speciesById={bySpeciesId}
+            area={zoneArea}
+            results={analysis.data?.results}
+            days={analysis.data?.weather.days}
+            show={showZones}
+            onToggle={setShowZones}
+          />
         </Analysis>
       )}
       {point && <Access state={parkings} />}
-      {point && <Observations data={observations} species={bySpeciesId[target]} />}
+      {point && target !== 'all' && <Observations data={observations} species={bySpeciesId[target]} />}
       <Offline
         map={leaflet}
         label={place?.name ?? (point ? `Secteur ${point.lat.toFixed(3)}, ${point.lon.toFixed(3)}` : null)}
@@ -230,8 +276,8 @@ export default function App() {
           Promise.allSettled([
             point && api.analyze(point.lat, point.lon, radius),
             point && api.parkings(point.lat, point.lon),
-            point && api.observations(target, point.lat, point.lon, 40),
-            zoneArea && api.zones(target, { s: zoneArea.s, w: zoneArea.w, n: zoneArea.n, e: zoneArea.e }),
+            point && target !== 'all' && api.observations(target, point.lat, point.lon, 40),
+            zoneArea && api.zones({ s: zoneArea.s, w: zoneArea.w, n: zoneArea.n, e: zoneArea.e }),
           ])
         }
       />
@@ -247,8 +293,10 @@ export default function App() {
         place={place}
         observations={observations?.items}
         parkings={parkings?.items}
-        zones={showZones ? zones.data : null}
-        zonesKey={`${target}:${zoneArea?.s},${zoneArea?.w}:${zones.data?.features.length}`}
+        zones={showZones ? shownZones : null}
+        zonesKey={`${target}:${zoneArea?.s},${zoneArea?.w}:${shownZones?.features.length}`}
+        zoneFocus={target}
+        speciesNames={speciesNames}
         tracker={tracker}
         spots={carnet.spots}
         follow={follow}
@@ -309,7 +357,7 @@ export default function App() {
           <BottomSheet
             snap={panel}
             onSnap={setPanel}
-            grip={<MobileSummary point={point} state={analysis} target={target} species={bySpeciesId[target]} />}
+            grip={<MobileSummary point={point} state={analysis} target={target} species={bySpeciesId[target]} zones={zones.data} speciesById={bySpeciesId} />}
           >
             {controls}
             {details}
@@ -327,7 +375,7 @@ export default function App() {
         <EntryForm
           spot={carnet.spots.find((s) => s.id === entryFor)}
           species={species.filter((s) => s.selectable)}
-          defaultSpecies={target}
+          defaultSpecies={target === 'all' ? '' : target}
           onSave={(entry) => carnet.addEntry(entryFor, entry)}
           onClose={() => setEntryFor(null)}
         />

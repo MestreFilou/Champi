@@ -86,15 +86,21 @@ déclenchante déjà tombée : pour le cèpe, le score de J+5 repose surtout sur
 Le « meilleur jour » pondère le score par cette fiabilité, pour qu'un jour lointain incertain ne
 l'emporte pas sur un bon jour proche.
 
-### Zones favorables
+### Zones : toutes les espèces d'un coup
 
-Quand on choisit une forêt, [server/lib/zones.js](server/lib/zones.js) récupère tous ses peuplements
-BD Forêt et ne garde que ceux dont l'essence convient à l'espèce, en trois niveaux selon l'affinité
-(`hosts` de l'espèce). La météo étant la même à l'échelle d'un massif, ce sont les arbres qui font la
-différence d'un secteur à l'autre. Emprise limitée à ~44 km de côté.
+Quand on choisit une forêt, [server/lib/zones.js](server/lib/zones.js) récupère tous ses peuplements BD Forêt
+et donne à chacun une note par espèce, sur 100 : la note météo du jour de l'espèce (la même sur tout le massif)
+× l'adéquation du peuplement (arbres hôtes, ajustés par le versant et par le sol).
 
-Le relief ajuste ces zones : pente et exposition au centre de chaque peuplement ([server/lib/relief.js](server/lib/relief.js)).
-Par temps chaud ou sec, les versants nord gagnent jusqu'à 30 % d'affinité ; par temps froid, les versants sud.
+- **Toutes les espèces** (par défaut) : chaque parcelle prend la couleur de son espèce la plus probable ;
+  la liste donne, pour chaque espèce, la note atteinte sur au moins 10 ha de la forêt (une seule petite
+  clairière ne suffit pas), la part de la forêt qui lui convient et son meilleur jour à venir.
+- **Une espèce isolée** (toucher une espèce, ou le menu « Espèces ») : la carte ne montre qu'elle, en trois
+  niveaux (60 et plus, 35 à 59, 10 à 34).
+
+Le relief ajuste les notes : pente et exposition au centre de chaque peuplement ([server/lib/relief.js](server/lib/relief.js)).
+Par temps chaud ou sec, les versants nord gagnent jusqu'à 30 % d'adéquation ; par temps froid, les versants sud.
+Emprise limitée à ~44 km de côté et 2000 peuplements (les mieux notés).
 
 ### Sol
 
