@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreDay, trapezoid, habitatScore, forecastConfidence } from './lib/score.js';
 import { zonesForSpecies } from './lib/zones.js';
+import { reliefBonus, slopeFrom } from './lib/relief.js';
+import { soilKind } from './lib/geology.js';
+import { soilFactor } from './lib/score.js';
 import { speciesById } from './data/species.js';
 
 // 30 jours de météo synthétique se terminant le 15 octobre
@@ -66,7 +69,36 @@ test('zones : seules les essences hôtes sortent, classées par niveau', () => {
 test('zones : au-delà du plafond, on garde les plus favorables', () => {
   const sq = [[[2, 48], [2.01, 48], [2.01, 48.01], [2, 48.01], [2, 48]]];
   const stands = ['Feuillus', 'Hêtre', 'Feuillus'].map((essence) => ({ essence, tfv: 'x', coordinates: [sq] }));
-  const z = zonesForSpecies(cepe, { stands, truncated: false }, 1);
+  const z = zonesForSpecies(cepe, { stands, truncated: false }, { max: 1 });
   assert.equal(z.truncated, true);
   assert.equal(z.features[0].properties.essence, 'Hêtre');
+});
+
+test('relief : exposition calculée depuis trois altitudes', () => {
+  // le terrain monte vers le sud (le point nord est plus bas) : versant tourné vers le nord
+  const r = slopeFrom(100, 100, 96);
+  assert.equal(r.aspect, 0);
+  assert.ok(r.slope > 5);
+  assert.ok(reliefBonus('nord', r) > 0.3);
+  assert.ok(reliefBonus('sud', r) < -0.3);
+  assert.equal(reliefBonus('nord', { slope: 1, aspect: 0 }), 0); // plat : pas d'effet
+});
+
+test('zones : un bon versant fait monter le niveau', () => {
+  const sq = [[[2, 48], [2.01, 48], [2.01, 48.01], [2, 48.01], [2, 48]]];
+  const stands = [{ essence: 'Feuillus', tfv: 'x', coordinates: [sq], relief: { slope: 15, aspect: 0, elevation: 200 } }];
+  assert.equal(zonesForSpecies(cepe, { stands, truncated: false }).features[0].properties.level, 'moyen');
+  assert.equal(zonesForSpecies(cepe, { stands, truncated: false }, { prefer: 'nord' }).features[0].properties.level, 'moyen');
+  const z = zonesForSpecies(cepe, { stands, truncated: false }, { prefer: 'sud' });
+  assert.equal(z.features[0].properties.level, 'faible');
+});
+
+test('sol : calcaire, acide et pénalité de la girolle sur calcaire', () => {
+  assert.equal(soilKind('Craie'), 'calcaire');
+  assert.equal(soilKind('Calcaires, marnes et gypse'), 'calcaire');
+  assert.equal(soilKind('Sables'), 'acide');
+  assert.equal(soilKind('Gneiss'), 'acide');
+  assert.equal(soilFactor(speciesById('girolle'), { kind: 'calcaire' }).value, 0.55);
+  assert.equal(soilFactor(speciesById('girolle'), { kind: 'acide' }).value, 1);
+  assert.equal(soilFactor(cepe, { kind: 'calcaire' }).value, 1); // le cèpe est indifférent
 });

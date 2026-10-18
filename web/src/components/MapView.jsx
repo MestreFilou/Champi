@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { MapContainer, TileLayer, WMSTileLayer, LayersControl, Circle, CircleMarker, GeoJSON, Polyline, Popup, useMap, useMapEvents } from 'react-leaflet';
 import { ZONE_STYLE } from './Zones.jsx';
+import { gmapsUrl, wazeUrl } from './Access.jsx';
 
 const IGN_WMTS = (layer, format = 'image/png') =>
   `https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=normal&TILEMATRIXSET=PM&FORMAT=${format}&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
@@ -39,10 +40,13 @@ const zoneStyle = (f) => {
   const s = ZONE_STYLE[f.properties.level];
   return { color: s.color, weight: 0.6, fillColor: s.color, fillOpacity: s.fillOpacity };
 };
-const zoneTooltip = (f, layer) =>
-  layer.bindTooltip(`${f.properties.essence} · ${ZONE_STYLE[f.properties.level].label}<br><small>${f.properties.tfv}</small>`, { sticky: true });
+const zoneTooltip = (f, layer) => {
+  const p = f.properties;
+  const relief = p.slope != null ? `<br><small>${p.slope >= 3 ? `pente ${Math.round(p.slope)}°, versant ${p.aspect}` : 'terrain plat'} · ${p.elevation} m${p.relief ? ` · ${p.relief}` : ''}</small>` : '';
+  layer.bindTooltip(`${p.essence} · ${ZONE_STYLE[p.level].label}<br><small>${p.tfv}</small>${relief}`, { sticky: true });
+};
 
-export default function MapView({ point, radius, place, observations = [], zones, zonesKey, tracker, follow, onFollow, onPick, onRemoveSpot }) {
+export default function MapView({ point, radius, place, observations = [], parkings = [], zones, zonesKey, tracker, follow, onFollow, onPick, onRemoveSpot }) {
   return (
     <MapContainer center={[46.6, 2.4]} zoom={6} className="map" zoomControl>
       <LayersControl position="topright">
@@ -103,6 +107,18 @@ export default function MapView({ point, radius, place, observations = [], zones
           </CircleMarker>
         ))}
 
+      {parkings.slice(0, 3).map((p) => (
+        <CircleMarker key={p.id} center={[p.lat, p.lon]} radius={8} bubblingMouseEvents={false}
+          pathOptions={{ color: '#fff', weight: 2, fillColor: '#1d4ed8', fillOpacity: 1 }}>
+          <Popup>
+            <strong>{p.name || 'Parking'}</strong>
+            <br />
+            <a href={gmapsUrl(p)} target="_blank" rel="noreferrer">Itinéraire Google Maps</a>
+            <br />
+            <a href={wazeUrl(p)} target="_blank" rel="noreferrer">Itinéraire Waze</a>
+          </Popup>
+        </CircleMarker>
+      ))}
       {tracker?.sortie.track.length > 1 && (
         <Polyline positions={tracker.sortie.track.map((p) => [p.lat, p.lon])} pathOptions={{ color: '#2563eb', weight: 4, opacity: 0.85 }} />
       )}

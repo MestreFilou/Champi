@@ -11,5 +11,6 @@ export const api = {
   search: (q) => get('search', { q }),
   analyze: (lat, lon, radius) => get('analyze', { lat, lon, radius }),
   zones: (species, bbox) => get('zones', { species, ...bbox }),
+  parkings: (lat, lon) => get('parkings', { lat, lon }),
   observations: (species, lat, lon, radius) => get('observations', { species, lat, lon, radius }),
 };

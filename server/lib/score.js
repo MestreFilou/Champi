@@ -94,17 +94,30 @@ export function habitatScore(species, composition) {
   return { value: clamp01(raw / 0.35), matches };
 }
 
-export function analyzeSpecies(species, weather, composition) {
+/**
+ * Sol du secteur face au sol préféré de l'espèce. La carte géologique est au 1/1 000 000 :
+ * on pénalise sans exclure, un îlot de sol favorable peut exister sous une région défavorable.
+ */
+export function soilFactor(species, soil) {
+  if (!species.soil || !soil?.kind) return { value: 1, preferred: species.soil ?? null, kind: soil?.kind ?? null, descr: soil?.descr ?? null };
+  const value = soil.kind === species.soil ? 1 : soil.kind === 'neutre' ? 0.8 : 0.55;
+  return { value, preferred: species.soil, kind: soil.kind, descr: soil.descr };
+}
+
+export function analyzeSpecies(species, weather, composition, soil = null) {
   const habitat = habitatScore(species, composition);
-  const today = scoreDay(species, weather, weather.todayIndex, habitat.value);
+  const soilF = soilFactor(species, soil);
+  const ground = habitat.value * soilF.value; // arbres hôtes × sol
+  const today = scoreDay(species, weather, weather.todayIndex, ground);
+  today.factors.soil = soilF;
   const forecast = [];
   for (let t = weather.todayIndex + 1; t < weather.days.length; t++) {
-    const s = scoreDay(species, weather, t, habitat.value);
+    const s = scoreDay(species, weather, t, ground);
     forecast.push({ date: s.date, score: s.score, confidence: forecastConfidence(species, t, weather.todayIndex) });
   }
   const history = [];
   for (let t = weather.todayIndex - 14; t < weather.todayIndex; t++) {
-    history.push({ date: weather.days[t].date, score: scoreDay(species, weather, t, habitat.value).score });
+    history.push({ date: weather.days[t].date, score: scoreDay(species, weather, t, ground).score });
   }
   return { id: species.id, today, forecast, history, habitat, verdict: verdict(today.score) };
 }

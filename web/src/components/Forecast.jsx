@@ -8,19 +8,29 @@ const CONFIDENCE = {
   faible: { label: 'tendance', weight: 0.65 },
 };
 
-// Prévision jour par jour pour l'espèce visée, avec le meilleur jour mis en avant.
-export default function Forecast({ result, days }) {
+export const confidenceLabel = (level) => CONFIDENCE[level].label;
+
+/**
+ * Aujourd'hui + jours de prévision, et le meilleur jour : le score pondéré par la fiabilité,
+ * pour qu'un jour lointain incertain ne l'emporte pas sur un bon jour proche.
+ */
+export function forecastDays(result, days = []) {
   const weatherByDate = Object.fromEntries(days.map((d) => [d.date, d]));
   const rows = [
     { date: result.today.date, score: result.today.score, confidence: { lead: 0, level: 'haute' } },
     ...result.forecast,
   ].map((r) => ({ ...r, wx: weatherByDate[r.date] }));
-
   const weighted = (r) => r.score * CONFIDENCE[r.confidence.level].weight;
   const best = rows.reduce((a, b) => (weighted(b) > weighted(a) ? b : a));
   // Plus loin et moins sûr, mais nettement plus haut : on le signale comme tendance.
   const later = rows.filter((r) => r.date > best.date);
   const trend = later.length ? later.reduce((a, b) => (b.score > a.score ? b : a)) : null;
+  return { rows, best, trend };
+}
+
+// Prévision jour par jour pour l'espèce visée, avec le meilleur jour mis en avant.
+export default function Forecast({ result, days }) {
+  const { rows, best, trend } = forecastDays(result, days);
 
   return (
     <section className="card">

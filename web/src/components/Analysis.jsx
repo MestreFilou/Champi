@@ -100,6 +100,12 @@ function TargetCard({ result, species, onOpenSheet }) {
             ? habitat.matches.slice(0, 3).map((m) => `${m.essence} ${pct(m.share)}`).join(' · ')
             : 'aucun hôte favorable cartographié'}
         </Factor>
+        {(f.soil?.descr || f.soil?.preferred) && (
+          <Factor v={f.soil.value} label="Sol">
+            {f.soil.descr ? `${f.soil.descr}${f.soil.kind ? ` (${f.soil.kind})` : ''}` : 'roche inconnue'}
+            {f.soil.preferred ? ` · l’espèce préfère un sol ${f.soil.preferred}` : ' · indifférent pour cette espèce'}
+          </Factor>
+        )}
       </ul>
     </section>
   );

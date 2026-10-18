@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { SPECIES, ALL_SHEETS, speciesById } from './data/species.js';
 import { getWeather } from './lib/weather.js';
 import { getForestComposition } from './lib/forest.js';
-import { analyzeSpecies } from './lib/score.js';
+import { analyzeSpecies, scoreDay } from './lib/score.js';
 import { getObservations, getTaxon } from './lib/observations.js';
 import { searchPlaces } from './lib/search.js';
 import { getStands, zonesForSpecies } from './lib/zones.js';
+import { reliefPreference } from './lib/relief.js';
+import { getSoil } from './lib/geology.js';
+import { getParkings } from './lib/parkings.js';
 
 const app = express();
 app.use(compression()); // les zones d'une grande forêt font ~2 Mo de JSON, ~400 Ko compressées
@@ -49,17 +52,22 @@ app.get('/api/search', route(async (req) => {
 app.get('/api/analyze', route(async (req) => {
   const { lat, lon } = coords(req);
   const radiusKm = Math.min(3, Math.max(0.3, Number(req.query.radius) || 1));
-  const [weather, forest] = await Promise.all([
+  const [weather, forest, soil] = await Promise.all([
     getWeather(lat, lon),
     getForestComposition(lat, lon, radiusKm).catch((err) => {
       console.error('BD Forêt indisponible :', err.message);
       return null;
     }),
+    getSoil(lat, lon).catch((err) => {
+      console.error('BRGM indisponible :', err.message);
+      return null;
+    }),
   ]);
-  const results = SPECIES.map((s) => analyzeSpecies(s, weather, forest)).sort((a, b) => b.today.score - a.today.score);
+  const results = SPECIES.map((s) => analyzeSpecies(s, weather, forest, soil)).sort((a, b) => b.today.score - a.today.score);
   return {
     point: { lat, lon, elevation: weather.elevation },
     forest,
+    soil,
     weather: {
       todayIndex: weather.todayIndex,
       days: weather.days.slice(weather.todayIndex - 30),
@@ -76,7 +84,18 @@ app.get('/api/zones', route(async (req) => {
   const bbox = ['s', 'w', 'n', 'e'].map((k) => Number(req.query[k]));
   coords({ query: { lat: bbox[0], lon: bbox[1] } });
   coords({ query: { lat: bbox[2], lon: bbox[3] } });
-  return zonesForSpecies(species, await getStands(bbox));
+  // Le versant à privilégier dépend de la météo du moment au centre de la zone
+  const [stands, weather] = await Promise.all([
+    getStands(bbox),
+    getWeather((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2).catch(() => null),
+  ]);
+  const relief = weather ? reliefPreference(species, scoreDay(species, weather, weather.todayIndex, 1).factors) : { prefer: null, reason: null };
+  return { ...zonesForSpecies(species, stands, { prefer: relief.prefer }), relief };
+}));
+
+app.get('/api/parkings', route(async (req) => {
+  const { lat, lon } = coords(req);
+  return getParkings(lat, lon);
 }));
 
 app.get('/api/observations', route(async (req) => {

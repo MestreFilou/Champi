@@ -1,5 +1,6 @@
 import { cached, DAY } from './cache.js';
 import { fetchForestFeatures, normalizeEssence, toPolygons } from './forest.js';
+import { aspectLabel, getSlopes, reliefBonus } from './relief.js';
 
 // Au-delà, trop de polygones pour une carte lisible (et pour l'IGN) : on demande de zoomer.
 export const MAX_SPAN_DEG = 0.4; // ≈ 44 km nord-sud
@@ -26,6 +27,7 @@ export function getStands(bbox) {
         coordinates: lighten(toPolygons(f.geometry)),
       }))
       .filter((st) => st.coordinates.length);
+    await addRelief(stands);
     return { stands, truncated };
   });
 }
@@ -38,18 +40,58 @@ export function zoneLevel(affinity) {
   return null;
 }
 
+// Pente et exposition au centre de chaque peuplement boisé (3 altitudes IGN par peuplement).
+// Si l'altimétrie ne répond pas, les zones restent utilisables sans relief.
+async function addRelief(stands) {
+  const wooded = stands.filter((st) => !NOT_WOODED.has(st.essence));
+  try {
+    const slopes = await getSlopes(wooded.map((st) => ringCenter(st.coordinates[0][0])));
+    wooded.forEach((st, i) => (st.relief = slopes[i]));
+  } catch (err) {
+    console.error('Altimétrie IGN indisponible :', err.message);
+  }
+}
+const NOT_WOODED = new Set(['Lande / non boisé', 'Non renseigné', 'Hors forêt']);
+
+function ringCenter(ring) {
+  const n = ring.length - 1 || 1;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    x += ring[i][0];
+    y += ring[i][1];
+  }
+  return [x / n, y / n];
+}
+
 // ~1,5 Ko par peuplement : 2000 peuplements restent sous la limite de 4,5 Mo des réponses Vercel.
 export const MAX_ZONES = 2000;
 
-export function zonesForSpecies(species, { stands, truncated }, max = MAX_ZONES) {
+/**
+ * Peuplements favorables à une espèce. `prefer` ('nord' | 'sud' | null) vient de la météo du moment :
+ * un bon versant fait monter l'affinité jusqu'à +30 %, un mauvais la fait baisser d'autant.
+ */
+export function zonesForSpecies(species, { stands, truncated }, { max = MAX_ZONES, prefer = null } = {}) {
   let features = [];
   for (const st of stands) {
-    const affinity = species.hosts[st.essence] ?? 0;
+    const host = species.hosts[st.essence] ?? 0;
+    if (!host) continue;
+    // Zone morte : une exposition à peine marquée ne doit pas faire basculer un peuplement de niveau
+    const raw = reliefBonus(prefer, st.relief);
+    const bonus = Math.abs(raw) < 0.25 ? 0 : raw;
+    const affinity = Math.round(Math.min(1, host * (1 + 0.3 * bonus)) * 100) / 100;
     const level = zoneLevel(affinity);
     if (!level) continue;
     features.push({
       type: 'Feature',
-      properties: { essence: st.essence, tfv: st.tfv, affinity, level },
+      properties: {
+        essence: st.essence,
+        tfv: st.tfv,
+        affinity,
+        level,
+        ...(st.relief && { slope: st.relief.slope, aspect: aspectLabel(st.relief.aspect), elevation: st.relief.elevation }),
+        relief: bonus > 0 ? 'bon versant' : bonus < 0 ? 'versant défavorable' : null,
+      },
       geometry: { type: 'MultiPolygon', coordinates: st.coordinates },
     });
   }

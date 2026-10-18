@@ -6,6 +6,7 @@
 // temp  : température moyenne de l'air sur les 7 derniers jours, trapèze [min, optBas, optHaut, max] en °C.
 // rain  : cumul de pluie attendu (mm) dans la fenêtre [delay[0], delay[1]] jours avant la date visée.
 // frostTolerance : 0 = une gelée stoppe la pousse, 1 = indifférent au gel.
+// soil  : sol préféré ('acide' ou 'calcaire') ; absent = indifférent.
 //
 // Ces valeurs sont des ordres de grandeur tirés de la littérature mycologique grand public :
 // elles servent à classer des jours et des lieux, pas à prédire une récolte.
@@ -59,6 +60,7 @@ export const SPECIES = [
     temp: [12, 16, 22, 27],
     rain: { minMm: 25, delay: [6, 14] },
     frostTolerance: 0.1,
+    soil: 'acide',
     identification: {
       chapeau: 'Brun très foncé à noir bronzé, velouté-mat, 8–20 cm, parfois tacheté de jaune doré.',
       dessous: 'Pores blancs puis jaune olive, ne bleuissant pas.',
@@ -82,6 +84,7 @@ export const SPECIES = [
     temp: [7, 11, 17, 22],
     rain: { minMm: 30, delay: [7, 16] },
     frostTolerance: 0.2,
+    soil: 'acide',
     identification: {
       chapeau: 'Brun rouge acajou à brun pourpre, 8–25 cm, surface finement ridée.',
       dessous: 'Pores blancs puis jaune verdâtre, ne bleuissant pas.',
@@ -105,6 +108,7 @@ export const SPECIES = [
     temp: [5, 9, 16, 21],
     rain: { minMm: 25, delay: [6, 14] },
     frostTolerance: 0.4,
+    soil: 'acide',
     identification: {
       chapeau: 'Brun marron chocolat, 5–15 cm, visqueux par temps humide.',
       dessous: 'Pores jaune crème puis verdâtres, bleuissant nettement au toucher.',
@@ -131,6 +135,7 @@ export const SPECIES = [
     temp: [10, 14, 22, 27],
     rain: { minMm: 20, delay: [4, 12] },
     frostTolerance: 0.2,
+    soil: 'acide',
     identification: {
       chapeau: 'Jaune d’œuf à jaune orangé, 3–10 cm, en entonnoir irrégulier à bord ondulé.',
       dessous: 'Pas de vraies lames : plis épais, fourchus, décurrents (qui descendent sur le pied), de la même couleur que le chapeau.',
@@ -155,6 +160,7 @@ export const SPECIES = [
     temp: [2, 6, 13, 18],
     rain: { minMm: 25, delay: [5, 14] },
     frostTolerance: 0.7,
+    soil: 'acide',
     identification: {
       chapeau: 'Brun jaunâtre à brun gris, 2–5 cm, ombiliqué puis perforé au centre.',
       dessous: 'Plis gris jaunâtre espacés et fourchus, décurrents.',
@@ -178,6 +184,7 @@ export const SPECIES = [
     temp: [7, 11, 18, 23],
     rain: { minMm: 30, delay: [6, 15] },
     frostTolerance: 0.4,
+    soil: 'calcaire',
     identification: {
       chapeau: 'En trompette creuse jusqu’à la base, 3–10 cm, gris noir à brun noir, bord enroulé ondulé.',
       dessous: 'Lisse ou à peine ridé, gris cendré (porte les spores).',
@@ -254,6 +261,7 @@ export const SPECIES = [
     temp: [7, 11, 18, 23],
     rain: { minMm: 25, delay: [6, 14] },
     frostTolerance: 0.3,
+    soil: 'calcaire',
     identification: {
       chapeau: 'Orange carotte zoné de cercles concentriques, 5–12 cm, déprimé au centre, verdit avec l’âge.',
       dessous: 'Lames orange serrées, se tachant de vert.',
@@ -351,6 +359,7 @@ export const SPECIES = [
     temp: [5, 9, 15, 20],
     rain: { minMm: 15, delay: [3, 12] },
     frostTolerance: 0.4,
+    soil: 'calcaire',
     identification: {
       chapeau: 'Alvéolé comme une éponge, ovoïde, jaune ocre à gris brun, 4–10 cm de haut.',
       dessous: 'Pas de lames : les alvéoles portent les spores.',

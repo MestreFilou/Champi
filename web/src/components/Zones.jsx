@@ -27,8 +27,11 @@ export default function Zones({ state, show, onToggle, species, area }) {
               </li>
             ))}
           </ul>
+          {state.data.relief?.prefer && (
+            <p className="hint">⛰ Privilégie les <strong>versants {state.data.relief.prefer}</strong> : {state.data.relief.reason}.</p>
+          )}
           <p className="muted small">
-            {area?.label ? `Dans ${area.label}` : 'Autour du point'} : peuplements dont l’essence convient à l’espèce (BD Forêt IGN).
+            {area?.label ? `Dans ${area.label}` : 'Autour du point'} : peuplements dont l’essence convient à l’espèce (BD Forêt IGN), ajustés selon la pente et l’exposition (altimétrie IGN).
             {state.data.truncated && ' Forêt très étendue : seuls les peuplements les plus favorables sont affichés. Clique dans un secteur pour le détail autour du point.'}
             {' '}Sur le terrain, privilégie lisières, bords de chemins et vieux arbres dans ces zones.
           </p>
